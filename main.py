@@ -1,8 +1,10 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime, timezone
 
-app = FastAPI()
+app = FastAPI(title="Energy Management Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,11 +16,36 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
+    return {"message": "Energy Management API running"}
 
 @app.get("/api/hello")
 def hello():
     return {"message": "Hello from the backend API!"}
+
+class ContactMessage(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    email: EmailStr
+    company: str | None = None
+    message: str = Field(..., min_length=5, max_length=2000)
+
+# Simple in-memory log for demo plus optional DB write if configured
+CONTACT_LOG: list[dict] = []
+
+@app.post("/api/contact")
+def submit_contact(payload: ContactMessage):
+    record = payload.model_dump()
+    record["created_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Try to write to database if available
+    try:
+        from database import db
+        if db is not None:
+            db["contact"].insert_one(record)
+    except Exception:
+        # Fallback: keep in memory for current session
+        CONTACT_LOG.append(record)
+
+    return {"status": "ok"}
 
 @app.get("/test")
 def test_database():
